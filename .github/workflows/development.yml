@@ -1,64 +1,123 @@
-name: Build TikDown IPA
+name: Development build
 
 on:
   workflow_dispatch:
-    inputs:
-      version:
-        description: "Version number (e.g. 1.0.1)"
-        required: false
-        default: "1.0.0"
 
 jobs:
   build:
-    name: Build IPA
+    name: Development build
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        include:
+          - platform: 2
+            platform_name: ios
+
     runs-on: macos-15
 
     steps:
-      - name: Checkout repo
+      - name: Remove work folders
+        run: |
+          rm -rf ./* || true
+          rm -rf ./.??* || true
+
+      - name: Checkout repository
         uses: actions/checkout@main
 
-      - name: Set up Xcode
+      - name: Checkout repository submodules
+        run: git submodule update --init --recursive
+
+      - name: Set up Xcode version
         uses: maxim-lobanov/setup-xcode@master
         with:
-          xcode-version: '16.3'
+          xcode-version: '26.1'
 
       - name: Install build tools
-        run: brew install xcodegen ldid
+        run: brew install make ldid temurin@8
 
-      - name: Generate Xcode project
-        run: xcodegen generate
-
-      - name: Build app (unsigned)
+      - name: Set up Java 8
         run: |
-          set -o pipefail
-          xcodebuild build \
-            -project TikDown.xcodeproj \
-            -scheme TikDown \
-            -sdk iphoneos \
-            -configuration Release \
-            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY=""
+          export JAVA_HOME=$(/usr/libexec/java_home -v 1.8)
+          echo "JAVA_HOME=$JAVA_HOME" >> $GITHUB_ENV
+          echo "$JAVA_HOME/bin" >> $GITHUB_PATH
 
-      - name: Fakesign & package IPA
+      - name: Get gl4es latest commit hash
+        id: gl4es-sha
+        shell: bash
         run: |
-          APP_PATH=$(find "$RUNNER_TEMP/DerivedData" -name "*.app" -type d | head -1)
-          echo "App found at: $APP_PATH"
+          echo "sha=$(git ls-remote https://github.com/PojavLauncherTeam/gl4es-114-extra refs/heads/master | grep -io '^\S*')" >> $GITHUB_OUTPUT
 
-          # Fakesign with ldid (same as Zenith)
-          ldid -S "$APP_PATH/$(basename $APP_PATH .app)"
+      - name: Cache gl4es
+        uses: actions/cache@main
+        if: false
+        id: gl4es-cache
+        with:
+          path: gl4es/libs
+          key: gl4es-holy-ios-shared-2-${{ steps.gl4es-sha.outputs.sha }}
 
-          # Package into IPA
-          mkdir -p "$RUNNER_TEMP/IPA/Payload"
-          cp -r "$APP_PATH" "$RUNNER_TEMP/IPA/Payload/"
-          cd "$RUNNER_TEMP/IPA"
-          zip -r TikDown-unsigned.ipa Payload
-          echo "IPA_PATH=$RUNNER_TEMP/IPA/TikDown-unsigned.ipa" >> $GITHUB_ENV
+      - name: Get gl4es
+        if: false && steps.gl4es-cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@main
+        with:
+          repository: 'PojavLauncherTeam/gl4es-114-extra'
+          path: 'gl4es'
 
-      - name: Upload IPA
+      - name: Build gl4es
+        if: false && steps.gl4es-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        run: |
+          cd gl4es
+          git config --global user.email "github-actions@users.noreply.github.com"
+          git config --global user.name "github-actions"
+          wget https://github.com/leetal/ios-cmake/raw/master/ios.toolchain.cmake
+          cmake -B build -DCMAKE_TOOLCHAIN_FILE=ios.toolchain.cmake -DDEFAULT_ES=2 \
+            -DNOX11=ON -DNOEGL=OFF -DSTATICLIB=OFF -DPLATFORM=OS64 \
+            -DCMAKE_C_FLAGS=-Wno-error=implicit-function-declaration
+          cmake --build build --config RelWithDebInfo --target GL
+          cp -R lib/libGL.dylib ../Natives/resources/Frameworks/libgl4es_114.dylib
+
+      - name: Push gl4es
+        if: false && github.event != 'pull_request' && github.ref_name == 'main' && steps.gl4es-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        run: |
+          git add Natives/resources/Frameworks/libgl4es_114.dylib
+          git commit -am "CI: Update gl4es"
+          git push
+
+      - name: Build for ${{ matrix.platform_name }}
+        run: |
+          export PATH=/opt/homebrew/bin:$PATH
+          export SLIMMED=1
+          if [ "${{ matrix.platform_name }}" == "ios" ]; then
+            gmake -j1 java PLATFORM=${{ matrix.platform }}
+            gmake -j$(sysctl -n hw.ncpu) dsym package PLATFORM=${{ matrix.platform }}
+            gmake -j$(sysctl -n hw.ncpu) dsym package PLATFORM=${{ matrix.platform }} TROLLSTORE_JIT_ENT=1
+          elif [ "${{ matrix.platform_name }}" == "tvos" ]; then
+            gmake -j1 java PLATFORM=${{ matrix.platform }}
+            gmake -j$(sysctl -n hw.ncpu) dsym package PLATFORM=${{ matrix.platform }} TROLLSTORE_JIT_ENT=1
+          else
+            gmake -j1 java PLATFORM=${{ matrix.platform }}
+            gmake -j$(sysctl -n hw.ncpu) dsym package PLATFORM=${{ matrix.platform }}
+          fi
+
+      - name: Upload regular ipa
         uses: actions/upload-artifact@main
         with:
-          name: site.KhinPhunnadet.TikDown-v${{ github.event.inputs.version }}-ios.ipa
-          path: ${{ env.IPA_PATH }}
-          retention-days: 30
+          name: com.thenullastris.zenithlauncher-${{ matrix.platform_name }}.ipa
+          path: artifacts/com.thenullastris.zenithlauncher-*-${{ matrix.platform_name }}.ipa
+      - name: Upload regular tipa
+        uses: actions/upload-artifact@main
+        with:
+          name: com.thenullastris.zenithlauncher-${{ matrix.platform_name }}-trollstore.tipa
+          path: artifacts/com.thenullastris.zenithlauncher-*-${{ matrix.platform_name }}-trollstore.tipa
+      - name: Upload slimmed ipa
+        uses: actions/upload-artifact@main
+        with:
+          name: com.thenullastris.zenithlauncher.slimmed-${{ matrix.platform_name }}.ipa
+          path: artifacts/com.thenullastris.zenithlauncher.slimmed-*-${{ matrix.platform_name }}.ipa
+      - name: Upload slimmed tipa
+        uses: actions/upload-artifact@main
+        with:
+          name: com.thenullastris.zenithlauncher.slimmed-${{ matrix.platform_name }}-trollstore.tipa
+          path: artifacts/com.thenullastris.zenithlauncher.slimmed-*-${{ matrix.platform_name }}-trollstore.tipa
