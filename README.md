@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/drevenant-7/Zenith-Launcher/main/assets/icon.png" width="120" alt="Zenith Launcher Icon" />
+<img src="Natives/Assets.xcassets/AppIcon-Light.appiconset/1024x1024.png" width="120" alt="Zenith Launcher Icon" />
 
 # ⚡ Zenith Launcher
 
@@ -113,11 +113,11 @@ Zenith Launcher requires **Just-In-Time (JIT) compilation** for optimal performa
 
 |Method      |💻 Requires Computer|📶 Requires Wi-Fi|✅ Auto-Enabled|
 |------------|:-----------------:|:--------------:|:------------:|
-|🏪 TrollStore|❌                  |❌               |✅             |
-|🔓 Jailbreak |❌                  |❌               |✅             |
-|🔵 AltStore  |✅                  |✅               |✅ *           |
-|🟣 SideStore |✅ **               |✅ **            |❌             |
-|⚡ Jitterbug |⚠️ ***              |✅               |❌             |
+|TrollStore|❌                  |❌               |✅             |
+|Jailbreak |❌                  |❌               |✅             |
+|AltStore  |✅                  |✅               |✅ *           |
+|SideStore |✅ **               |✅ **            |❌             |
+|Jitterbug |⚠️ ***              |✅               |❌             |
 
 
 > * Requires AltServer running on local network  
