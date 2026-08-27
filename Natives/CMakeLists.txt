@@ -74,7 +74,7 @@ set(LTW_INCLUDES
   "${LTW_DIR}/glsl_optimizer/src"
   "${LTW_DIR}/vgpu_shaderconv"
   "${LTW_DIR}/unordered_map"
-  "${CMAKE_CURRENT_LIST_DIR}/external/MobileGlues/MobileGlues-cpp/include"
+  "${CMAKE_CURRENT_LIST_DIR}/external/MobileGlues/src/main/cpp/include"
 )
 
 include(cmake/ltw_sources.cmake)

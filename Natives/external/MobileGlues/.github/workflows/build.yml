@@ -11,7 +11,7 @@ jobs:
 
       - name: Build MobileGlues
         run: |
-          cd MobileGlues-cpp
+          cd src/main/cpp 
           wget https://github.com/leetal/ios-cmake/raw/master/ios.toolchain.cmake
           cmake -B build \
             -DCMAKE_TOOLCHAIN_FILE=ios.toolchain.cmake \
@@ -26,4 +26,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: MobileGlues-iOS-dylib
-          path: /Users/runner/work/MobileGlues/MobileGlues/MobileGlues-cpp/build
+          path: /Users/runner/work/MobileGlues/MobileGlues/src/main/cpp/build
