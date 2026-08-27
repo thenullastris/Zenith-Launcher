@@ -2,7 +2,7 @@
   <img src="https://raw.githubusercontent.com/thenullastris/Zenith-Launcher/main/docs/assets/zenith-hero.png" alt="A luminous portal on a floating voxel island beside a mobile device" width="100%" />
   <br />
   <br />
-  <img src="Natives/Assets.xcassets/AppIcon-Light.appiconset/1024x1024-Monochrome-White.png" alt="Zenith Launcher icon" width="132" />
+  <img src="Natives/Assets.xcassets/AppIcon-Light.appiconset/1024x1024.png" alt="Zenith Launcher icon" width="132" />
 
   # Zenith Launcher
 
