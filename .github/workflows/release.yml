@@ -1,7 +1,21 @@
 name: Release build
 
 on:
-  workflow_dispatch
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag to create, for example v1.0.0'
+        required: true
+        type: string
+      release_name:
+        description: 'Optional GitHub Release title'
+        required: false
+        default: ''
+        type: string
+
+# The workflow creates a tag and GitHub Release after a successful build.
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -11,27 +25,47 @@ jobs:
         include:
           - platform: 2
             platform_name: ios
-    
+
     runs-on: macos-14
     timeout-minutes: 60
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      RELEASE_NAME: ${{ inputs.release_name }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
           submodules: recursive
+          fetch-depth: 0
+
+      - name: Validate release tag and source branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_NAME" != "main" ]]; then
+            echo "Release builds must be run from the main branch; selected: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          if [[ ! "$RELEASE_TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "release_tag must look like v1.2.3 or 1.2.3" >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "The tag $RELEASE_TAG already exists. Choose a new tag." >&2
+            exit 1
+          fi
 
       - name: Set up Xcode Version
         run: sudo xcode-select -s /Applications/Xcode_15.4.app
 
-      # provision the stable zulu jdk 8 runtime environment as structured in the upstream core
       - name: Setup JDK 8 (Zulu)
         uses: actions/setup-java@v5
         id: setup-java
         with:
           distribution: 'zulu'
           java-version: '8'
+          architecture: x64
 
-      # initialize essential building and packaging utilities via homebrew infrastructure
       - name: Install brew dependencies
         env:
           HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
@@ -40,7 +74,6 @@ jobs:
           brew update
           brew install make wget ldid
           sudo mkdir -p /usr/local/bin
-          # map the gmake binary symlink seamlessly across the target build runner paths
           sudo ln -sf /opt/homebrew/bin/gmake /usr/local/bin/gmake
 
       - name: Cache iOS JREs
@@ -50,65 +83,117 @@ jobs:
           path: depends/
           key: amethyst-jres-v1
 
-      # resolve and inject core environmental paths and flags directly into the global execution scope
       - name: Resolve env (paths, SDK)
         run: |
-          echo "SDKPATH=$(xcrun --sdk iphoneos --show-sdk-path)" >> $GITHUB_ENV
-          echo "RUNNER=1" >> $GITHUB_ENV
+          echo "SDKPATH=$(xcrun --sdk iphoneos --show-sdk-path)" >> "$GITHUB_ENV"
+          echo "RUNNER=1" >> "$GITHUB_ENV"
 
-      - name: Build for ${{ matrix.platform_name }}
+      - name: Verify tools
+        run: |
+          gmake --version | head -1
+          ldid -V 2>&1 | head -1 || true
+          cmake --version | head -1
+          wget --version | head -1
+          xcrun --sdk iphoneos --show-sdk-version
+          echo "SDKPATH=$SDKPATH"
+
+      - name: Build iOS IPA and TrollStore tIPA
         shell: bash
         run: |
-          # Apply the mach/mach.h fix required for Zenith Launcher
-          echo '#import <mach/mach.h>' | cat - Natives/JavaLauncher.m > temp && mv temp Natives/JavaLauncher.m
-          
+          set -euo pipefail
+          echo '#import <mach/mach.h>' | cat - Natives/JavaLauncher.m > temp
+          mv temp Natives/JavaLauncher.m
+
           JDK_BASE_PATH="${{ steps.setup-java.outputs.path }}"
           export PATH="$JDK_BASE_PATH/bin:/opt/homebrew/bin:$PATH"
           export JAVA_HOME="$JDK_BASE_PATH"
           export BOOTJDK="$JDK_BASE_PATH/bin"
           export SLIMMED=1
-          
+
           export CODE_SIGNING_ALLOWED=NO
           export CODE_SIGNING_REQUIRED=NO
           export CODE_SIGN_IDENTITY=""
-          export CFLAGS="-Wno-error=implicit-function-declaration $CFLAGS"
-          export CXXFLAGS="-Wno-error=implicit-function-declaration $CXXFLAGS"
+          export CFLAGS="-Wno-error=implicit-function-declaration -Wno-error=int-to-pointer-cast ${CFLAGS:-}"
+          export CXXFLAGS="-Wno-error=implicit-function-declaration -Wno-error=int-to-pointer-cast ${CXXFLAGS:-}"
           SIGN_FLAGS="CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="
-          
-          # Build ipa and tipa for iOS
-          gmake -j$(sysctl -n hw.ncpu) dsym package PLATFORM=${{ matrix.platform }} $SIGN_FLAGS 2> >(grep -v "vtool warning: code signature will be invalid" >&2)
-          gmake -j$(sysctl -n hw.ncpu) dsym package PLATFORM=${{ matrix.platform }} TROLLSTORE_JIT_ENT=1 $SIGN_FLAGS 2> >(grep -v "vtool warning: code signature will be invalid" >&2)
+
+          gmake -j"$(sysctl -n hw.ncpu)" dsym package PLATFORM=${{ matrix.platform }} $SIGN_FLAGS 2> >(grep -v "vtool warning: code signature will be invalid" >&2)
+          gmake -j"$(sysctl -n hw.ncpu)" dsym package PLATFORM=${{ matrix.platform }} TROLLSTORE_JIT_ENT=1 $SIGN_FLAGS 2> >(grep -v "vtool warning: code signature will be invalid" >&2)
 
       - name: List artifacts
         if: always()
         run: ls -la artifacts/ || true
 
-      - name: Upload regular ipa
-        if: always()
-        uses: actions/upload-artifact@v5
+      - name: Upload regular IPA artifact
+        if: success()
+        uses: actions/upload-artifact@v6
         with:
           name: com.thenullastris.zenithlauncher-${{ matrix.platform_name }}
           path: artifacts/com.thenullastris.zenithlauncher-*-${{ matrix.platform_name }}.ipa
           retention-days: 90
-          if-no-files-found: warn
+          if-no-files-found: error
           compression-level: 0
 
-      - name: Upload regular tipa
-        if: always()
-        uses: actions/upload-artifact@v5
+      - name: Upload TrollStore tIPA artifact
+        if: success()
+        uses: actions/upload-artifact@v6
         with:
           name: com.thenullastris.zenithlauncher-${{ matrix.platform_name }}-trollstore
           path: artifacts/com.thenullastris.zenithlauncher-*-${{ matrix.platform_name }}-trollstore.tipa
           retention-days: 90
-          if-no-files-found: warn
+          if-no-files-found: error
           compression-level: 0
 
-      - name: Upload dSYM
-        if: always() && matrix.platform_name == 'ios'
-        uses: actions/upload-artifact@v5
+      - name: Upload dSYM artifact
+        if: success()
+        uses: actions/upload-artifact@v6
         with:
           name: com.thenullastris.zenithlauncher-dSYM
           path: artifacts/*.dSYM
           retention-days: 90
           if-no-files-found: warn
           compression-level: 0
+
+      - name: Publish GitHub Release with IPA files
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(artifacts/*.ipa artifacts/*.tipa)
+          if (( ${#files[@]} == 0 )); then
+            echo 'No IPA or tIPA files were produced.' >&2
+            exit 1
+          fi
+
+          title="$RELEASE_NAME"
+          if [[ -z "$title" ]]; then
+            title="Zenith Launcher $RELEASE_TAG"
+          fi
+
+          if [[ -n "$RELEASE_NAME" ]]; then
+            gh release create "$RELEASE_TAG" "${files[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "$title" \
+              --generate-notes
+          else
+            gh release create "$RELEASE_TAG" "${files[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "$title" \
+              --generate-notes
+          fi
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: build-logs
+          path: |
+            Natives/build/CMakeFiles/CMakeOutput.log
+            Natives/build/CMakeFiles/CMakeError.log
+          if-no-files-found: ignore
+          retention-days: 7
