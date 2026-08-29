@@ -1,21 +1,23 @@
 name: Release build
 
 on:
+  # GitHub does not emit a release event when a release is only saved as a
+  # draft. Publishing the release is the reliable automatic build trigger.
+  release:
+    types: [published]
+  # Manual fallback for testing a draft release before publishing it.
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Release tag to create, for example v1.0.0'
+        description: 'Existing release tag, for example v1.0.3'
         required: true
         type: string
-      release_name:
-        description: 'Optional GitHub Release title'
-        required: false
-        default: ''
-        type: string
 
-# The workflow creates a tag and GitHub Release after a successful build.
 permissions:
   contents: write
+
+env:
+  RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
 
 jobs:
   build:
@@ -28,32 +30,14 @@ jobs:
 
     runs-on: macos-14
     timeout-minutes: 60
-    env:
-      RELEASE_TAG: ${{ inputs.release_tag }}
-      RELEASE_NAME: ${{ inputs.release_name }}
     steps:
-      - name: Checkout repository
+      - name: Checkout release source
         uses: actions/checkout@v5
         with:
+          # Build exactly the commit selected by the release tag.
+          ref: ${{ github.event.release.tag_name || github.ref }}
           submodules: recursive
           fetch-depth: 0
-
-      - name: Validate release tag and source branch
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ "$GITHUB_REF_NAME" != "main" ]]; then
-            echo "Release builds must be run from the main branch; selected: $GITHUB_REF_NAME" >&2
-            exit 1
-          fi
-          if [[ ! "$RELEASE_TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "release_tag must look like v1.2.3 or 1.2.3" >&2
-            exit 1
-          fi
-          if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "The tag $RELEASE_TAG already exists. Choose a new tag." >&2
-            exit 1
-          fi
 
       - name: Set up Xcode Version
         run: sudo xcode-select -s /Applications/Xcode_15.4.app
@@ -124,7 +108,7 @@ jobs:
         if: always()
         run: ls -la artifacts/ || true
 
-      - name: Upload regular IPA artifact
+      - name: Upload IPA artifact to workflow run
         if: success()
         uses: actions/upload-artifact@v6
         with:
@@ -134,7 +118,7 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
-      - name: Upload TrollStore tIPA artifact
+      - name: Upload TrollStore tIPA artifact to workflow run
         if: success()
         uses: actions/upload-artifact@v6
         with:
@@ -144,7 +128,7 @@ jobs:
           if-no-files-found: error
           compression-level: 0
 
-      - name: Upload dSYM artifact
+      - name: Upload dSYM artifact to workflow run
         if: success()
         uses: actions/upload-artifact@v6
         with:
@@ -154,7 +138,7 @@ jobs:
           if-no-files-found: warn
           compression-level: 0
 
-      - name: Publish GitHub Release with IPA files
+      - name: Attach IPA and tIPA to the triggering release
         if: success()
         shell: bash
         env:
@@ -167,25 +151,9 @@ jobs:
             echo 'No IPA or tIPA files were produced.' >&2
             exit 1
           fi
-
-          title="$RELEASE_NAME"
-          if [[ -z "$title" ]]; then
-            title="Zenith Launcher $RELEASE_TAG"
-          fi
-
-          if [[ -n "$RELEASE_NAME" ]]; then
-            gh release create "$RELEASE_TAG" "${files[@]}" \
-              --repo "$GITHUB_REPOSITORY" \
-              --target "$GITHUB_SHA" \
-              --title "$title" \
-              --generate-notes
-          else
-            gh release create "$RELEASE_TAG" "${files[@]}" \
-              --repo "$GITHUB_REPOSITORY" \
-              --target "$GITHUB_SHA" \
-              --title "$title" \
-              --generate-notes
-          fi
+          gh release upload "$RELEASE_TAG" "${files[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
 
       - name: Upload build logs on failure
         if: failure()
