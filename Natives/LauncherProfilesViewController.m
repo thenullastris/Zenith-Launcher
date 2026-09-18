@@ -1,3 +1,4 @@
+#import "ZenithFont.h"
 #import "LauncherMenuViewController.h"
 #import "LauncherNavigationController.h"
 #import "LauncherPreferences.h"

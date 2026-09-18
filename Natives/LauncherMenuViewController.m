@@ -1,3 +1,4 @@
+#import "ZenithFont.h"
 #import "authenticator/BaseAuthenticator.h"
 #import "AccountListViewController.h"
 #import "AFNetworking.h"
@@ -309,7 +310,7 @@
         subtitle = selected[@"xboxGamertag"];
     }
 
-    subtitle = [[NSAttributedString alloc] initWithString:subtitle attributes:@{NSFontAttributeName: [UIFont systemFontOfSize:12]}];
+    subtitle = [[NSAttributedString alloc] initWithString:subtitle attributes:@{NSFontAttributeName: ZenithFont(12, UIFontWeightRegular)}];
     [title appendAttributedString:[[NSAttributedString alloc] initWithString:@"\n" attributes:nil]];
     [title appendAttributedString:subtitle];
     

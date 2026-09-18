@@ -1,3 +1,4 @@
+#import "ZenithFont.h"
 #import <Foundation/Foundation.h>
 
 #import "DBNumberedSlider.h"

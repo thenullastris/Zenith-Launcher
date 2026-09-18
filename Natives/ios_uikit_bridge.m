@@ -1,3 +1,4 @@
+#import "ZenithFont.h"
 #import "authenticator/BaseAuthenticator.h"
 #import "AppDelegate.h"
 #import "SceneDelegate.h"
@@ -59,7 +60,7 @@ dispatch_async(dispatch_get_main_queue(), ^{
     NSMutableParagraphStyle *style = [[NSMutableParagraphStyle alloc] init];
     style.alignment = NSTextAlignmentLeft;
 
-    NSMutableAttributedString *atrStr = [[NSMutableAttributedString alloc] initWithString:message_o attributes:@{NSParagraphStyleAttributeName:style,NSFontAttributeName:[UIFont systemFontOfSize:13.0]}];
+    NSMutableAttributedString *atrStr = [[NSMutableAttributedString alloc] initWithString:message_o attributes:@{NSParagraphStyleAttributeName:style,NSFontAttributeName:ZenithFont(13.0, UIFontWeightRegular)}];
 
     [alert setValue:atrStr forKey:@"attributedMessage"];
 

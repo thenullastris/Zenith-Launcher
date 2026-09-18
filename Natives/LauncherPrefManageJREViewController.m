@@ -1,3 +1,4 @@
+#import "ZenithFont.h"
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import "WFWorkflowProgressView.h"
 #import "LauncherNavigationController.h"
